@@ -15,6 +15,20 @@ ROBLOX_REJOIN_HOME="${ROBLOX_REJOIN_HOME:-$HOME/.roblox-rejoin}"
 export ROBLOX_REJOIN_HOME
 mkdir -p "$ROBLOX_REJOIN_HOME"
 
+# Install counter (optional): must match TELEMETRY_URL/TELEMETRY_TOKEN set in rejoin.cjs / rejoin lite.cjs. Blank = off.
+# Counts a device ONCE, the very first time the loader ever runs on it. Never blocks startup and never errors out loud
+# even with no internet - it's a background best-effort ping, nothing here depends on it succeeding.
+TELEMETRY_URL="https://happy-silkworm-212383.upstash.io"
+TELEMETRY_TOKEN="gQAAAAAAAz2fAAIgcDIyY2ExYmE0ODA1MzA0Nzc3YTE3M2VhYmI1ZGU0OTM5YQ"
+INSTALL_MARKER="$ROBLOX_REJOIN_HOME/.install_counted"
+if [ -n "$TELEMETRY_URL" ] && [ -n "$TELEMETRY_TOKEN" ] && [ ! -f "$INSTALL_MARKER" ]; then
+  touch "$INSTALL_MARKER" 2>/dev/null
+  ( command -v curl >/dev/null 2>&1 && curl -fsS -m 5 \
+      -H "Authorization: Bearer $TELEMETRY_TOKEN" \
+      "${TELEMETRY_URL%/}/incr/installed_count" >/dev/null 2>&1 ) &
+  disown 2>/dev/null || true
+fi
+
 CFGS="multi_configs.json webhook_config.json package_prefix_config.json activity_config.json autoexec_config.json launch_activity_cache.json"
 LAST_FILE="$ROBLOX_REJOIN_HOME/loader_choice"
 
