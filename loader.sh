@@ -1,209 +1,162 @@
 #!/bin/bash
+# Packed for distribution (not encrypted - just not plain text in a casual view).
+# To read or edit the real script: bash loader.obf.sh --source
 set -u
-
-pkg(){ yes | command pkg "$@"; }
-
-R="https://github.com/QT305/roblox-rejoin"
-D="$HOME/roblox-rejoin"
-W="$D"
-ENTRY_VIP="rejoin.cjs"
-ENTRY_LITE="rejoin lite.cjs"
-PREFIX_DIR="${PREFIX:-/data/data/com.termux/files/usr}"
-L="$PREFIX_DIR/bin/loader"
-
-ROBLOX_REJOIN_HOME="${ROBLOX_REJOIN_HOME:-$HOME/.roblox-rejoin}"
-export ROBLOX_REJOIN_HOME
-mkdir -p "$ROBLOX_REJOIN_HOME"
-
-# Install counter (optional): must match TELEMETRY_URL/TELEMETRY_TOKEN set in rejoin.cjs / rejoin lite.cjs. Blank = off.
-# Counts a device ONCE, the very first time the loader ever runs on it. Never blocks startup and never errors out loud
-# even with no internet - it's a background best-effort ping, nothing here depends on it succeeding.
-TELEMETRY_URL="https://happy-silkworm-212383.upstash.io"
-TELEMETRY_TOKEN="gQAAAAAAAz2fAAIgcDIyY2ExYmE0ODA1MzA0Nzc3YTE3M2VhYmI1ZGU0OTM5YQ"
-INSTALL_MARKER="$ROBLOX_REJOIN_HOME/.install_counted"
-if [ -n "$TELEMETRY_URL" ] && [ -n "$TELEMETRY_TOKEN" ] && [ ! -f "$INSTALL_MARKER" ]; then
-  touch "$INSTALL_MARKER" 2>/dev/null
-  ( command -v curl >/dev/null 2>&1 && curl -fsS -m 5 \
-      -H "Authorization: Bearer $TELEMETRY_TOKEN" \
-      "${TELEMETRY_URL%/}/incr/installed_count" >/dev/null 2>&1 ) &
-  disown 2>/dev/null || true
+PAYLOAD_B64=$(cat <<'B64_SRC'
+IyEvYmluL2Jhc2gKc2V0IC11Cgpwa2coKXsgeWVzIHwgY29tbWFuZCBwa2cgIiRAIjsgfQoKUj0i
+aHR0cHM6Ly9naXRodWIuY29tL1FUMzA1L3JvYmxveC1yZWpvaW4iCkQ9IiRIT01FL3JvYmxveC1y
+ZWpvaW4iClc9IiREIgpFTlRSWV9WSVA9InJlam9pbi5janMiCkVOVFJZX0xJVEU9InJlam9pbiBs
+aXRlLmNqcyIKUFJFRklYX0RJUj0iJHtQUkVGSVg6LS9kYXRhL2RhdGEvY29tLnRlcm11eC9maWxl
+cy91c3J9IgpMPSIkUFJFRklYX0RJUi9iaW4vbG9hZGVyIgoKUk9CTE9YX1JFSk9JTl9IT01FPSIk
+e1JPQkxPWF9SRUpPSU5fSE9NRTotJEhPTUUvLnJvYmxveC1yZWpvaW59IgpleHBvcnQgUk9CTE9Y
+X1JFSk9JTl9IT01FCm1rZGlyIC1wICIkUk9CTE9YX1JFSk9JTl9IT01FIgoKIyBJbnN0YWxsIGNv
+dW50ZXIgKG9wdGlvbmFsKTogbXVzdCBtYXRjaCBURUxFTUVUUllfVVJML1RFTEVNRVRSWV9UT0tF
+TiBzZXQgaW4gcmVqb2luLmNqcyAvIHJlam9pbiBsaXRlLmNqcy4gQmxhbmsgPSBvZmYuCiMgQ291
+bnRzIGEgZGV2aWNlIE9OQ0UsIHRoZSB2ZXJ5IGZpcnN0IHRpbWUgdGhlIGxvYWRlciBldmVyIHJ1
+bnMgb24gaXQuIE5ldmVyIGJsb2NrcyBzdGFydHVwIGFuZCBuZXZlciBlcnJvcnMgb3V0IGxvdWQK
+IyBldmVuIHdpdGggbm8gaW50ZXJuZXQgLSBpdCdzIGEgYmFja2dyb3VuZCBiZXN0LWVmZm9ydCBw
+aW5nLCBub3RoaW5nIGhlcmUgZGVwZW5kcyBvbiBpdCBzdWNjZWVkaW5nLgpURUxFTUVUUllfVVJM
+PSJodHRwczovL2hhcHB5LXNpbGt3b3JtLTIxMjM4My51cHN0YXNoLmlvIgpURUxFTUVUUllfVE9L
+RU49ImdRQUFBQUFBQXoyZkFBSWdjREl5WTJFeFltRTBPREExTXpBME56YzNZVEUzTTJWaFltSTFa
+R1UwT1RNNVlRIgpJTlNUQUxMX01BUktFUj0iJFJPQkxPWF9SRUpPSU5fSE9NRS8uaW5zdGFsbF9j
+b3VudGVkIgppZiBbIC1uICIkVEVMRU1FVFJZX1VSTCIgXSAmJiBbIC1uICIkVEVMRU1FVFJZX1RP
+S0VOIiBdICYmIFsgISAtZiAiJElOU1RBTExfTUFSS0VSIiBdOyB0aGVuCiAgdG91Y2ggIiRJTlNU
+QUxMX01BUktFUiIgMj4vZGV2L251bGwKICAoIGNvbW1hbmQgLXYgY3VybCA+L2Rldi9udWxsIDI+
+JjEgJiYgY3VybCAtZnNTIC1tIDUgXAogICAgICAtSCAiQXV0aG9yaXphdGlvbjogQmVhcmVyICRU
+RUxFTUVUUllfVE9LRU4iIFwKICAgICAgIiR7VEVMRU1FVFJZX1VSTCUvfS9pbmNyL2luc3RhbGxl
+ZF9jb3VudCIgPi9kZXYvbnVsbCAyPiYxICkgJgogIGRpc293biAyPi9kZXYvbnVsbCB8fCB0cnVl
+CmZpCgpDRkdTPSJtdWx0aV9jb25maWdzLmpzb24gd2ViaG9va19jb25maWcuanNvbiBwYWNrYWdl
+X3ByZWZpeF9jb25maWcuanNvbiBhY3Rpdml0eV9jb25maWcuanNvbiBhdXRvZXhlY19jb25maWcu
+anNvbiBsYXVuY2hfYWN0aXZpdHlfY2FjaGUuanNvbiIKTEFTVF9GSUxFPSIkUk9CTE9YX1JFSk9J
+Tl9IT01FL2xvYWRlcl9jaG9pY2UiCgpTRUxGPSIkKHJlYWRsaW5rIC1mICIkMCIgMj4vZGV2L251
+bGwgfHwgZWNobyAiJDAiKSIKaWYgWyAiJFNFTEYiICE9ICIkTCIgXSAmJiB7IFsgISAtZiAiJEwi
+IF0gfHwgISBjbXAgLXMgIiRTRUxGIiAiJEwiOyB9OyB0aGVuCiAgY3AgIiRTRUxGIiAiJEwiIDI+
+L2Rldi9udWxsICYmIHNlZCAtaSAncy9cciQvLycgIiRMIiAmJiBjaG1vZCAreCAiJEwiCmZpCgpM
+QVNUPSIkKGNhdCAiJExBU1RfRklMRSIgMj4vZGV2L251bGwpIgpjYXNlICIkTEFTVCIgaW4gMXwy
+KSA7OyAqKSBMQVNUPTEgOzsgZXNhYwoKQVVUT1NUQVJUPTAKX3JlYnVpbGQ9KCkKZm9yIF9hIGlu
+ICIkQCI7IGRvCiAgWyAiJF9hIiA9ICItLWF1dG9zdGFydCIgXSAmJiB7IEFVVE9TVEFSVD0xOyBj
+b250aW51ZTsgfQogIF9yZWJ1aWxkKz0oIiRfYSIpCmRvbmUKc2V0IC0tICIke19yZWJ1aWxkW0Bd
+KyIke19yZWJ1aWxkW0BdfSJ9Igp1bnNldCBfYSBfcmVidWlsZAoKbm9ybWFsaXplKCkgewogIGNh
+c2UgIiQoZWNobyAiJHsxOi19IiB8IHRyICdBLVonICdhLXonKSIgaW4KICAgIDF8dmlwKSBlY2hv
+IDEgOzsKICAgIDJ8bGl0ZSkgZWNobyAyIDs7CiAgICAqKSBlY2hvICIiIDs7CiAgZXNhYwp9CgpD
+SE9JQ0U9IiIKaWYgWyAiJEFVVE9TVEFSVCIgPSAiMSIgXTsgdGhlbgogIENIT0lDRT0iJExBU1Qi
+CmVsc2UKICBpZiBbICQjIC1ndCAwIF07IHRoZW4KICAgIENIT0lDRT0iJChub3JtYWxpemUgIiQx
+IikiCiAgICBbIC1uICIkQ0hPSUNFIiBdICYmIHNoaWZ0CiAgZmkKICBbIC16ICIkQ0hPSUNFIiBd
+ICYmIENIT0lDRT0iJChub3JtYWxpemUgIiR7TE9BREVSX0NIT0lDRTotfSIpIgpmaQoKaWYgWyAt
+eiAiJENIT0lDRSIgXTsgdGhlbgogIEMxPSQnXDAzM1sxOzM4OzU7ODdtJzsgQzI9JCdcMDMzWzE7
+Mzg7NTsxMjFtJzsgQzM9JCdcMDMzWzM4OzU7MjQ1bSc7IEM0PSQnXDAzM1szODs1OzYzbSc7IEMw
+PSQnXDAzM1swbScKICBbIC10IDEgXSB8fCB7IEMxPSIiOyBDMj0iIjsgQzM9IiI7IEM0PSIiOyBD
+MD0iIjsgfQogIGVjaG8KICBlY2hvICIke0M0feKVreKUgCAke0MxfVJPQkxPWCBSRUpPSU4ke0M0
+fSDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDi
+lIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDila4k
+e0MwfSIKICBlY2hvICIke0M0feKUgiR7QzB9ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICR7QzR94pSCJHtDMH0iCiAgZWNobyAiJHtDNH3ilIIke0Mw
+fSAgJHtDMn1bMV0ke0MwfSBWSVAgICAke0MzfWFsbCBmZWF0dXJlcyAocmVqb2luLmNqcykke0Mw
+fSAgICAgICAgICAgICAgICR7QzR94pSCJHtDMH0iCiAgZWNobyAiJHtDNH3ilIIke0MwfSAgJHtD
+Mn1bMl0ke0MwfSBMSVRFICAke0MzfWxpZ2h0LCBzbW9vdGggb24gbG9uZyBydW5zJHtDMH0gICAg
+ICAgICAgICAgICR7QzR94pSCJHtDMH0iCiAgZWNobyAiJHtDNH3ilIIke0MwfSAgICAgICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAke0M0feKUgiR7QzB9Igog
+IGVjaG8gIiR7QzR94pWw4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA
+4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA
+4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA
+4pWvJHtDMH0iCiAgcHJpbnRmICIgIENob29zZSBbMS0yLCBFbnRlciA9ICVzXTogIiAiJExBU1Qi
+CiAgQU5TPSIiCiAgeyByZWFkIC1yIEFOUyA8L2Rldi90dHk7IH0gMj4vZGV2L251bGwgfHwgcmVh
+ZCAtciBBTlMgfHwgQU5TPSIiCiAgaWYgWyAteiAiJEFOUyIgXTsgdGhlbgogICAgQ0hPSUNFPSIk
+TEFTVCIKICBlbHNlCiAgICBDSE9JQ0U9IiQobm9ybWFsaXplICIkQU5TIikiCiAgICBbIC16ICIk
+Q0hPSUNFIiBdICYmIHsgZWNobyAiWy1dIEludmFsaWQgY2hvaWNlLiI7IGV4aXQgMTsgfQogIGZp
+CmZpCgplY2hvICIkQ0hPSUNFIiA+ICIkTEFTVF9GSUxFIiAyPi9kZXYvbnVsbAoKaWYgWyAiJENI
+T0lDRSIgPSAiMiIgXTsgdGhlbiBFTlRSWT0iJEVOVFJZX0xJVEUiOyBOQU1FPSJMSVRFIjsgZWxz
+ZSBFTlRSWT0iJEVOVFJZX1ZJUCI7IE5BTUU9IlZJUCI7IGZpCmVjaG8gIlsqXSBTdGFydGluZyAk
+TkFNRS4uLiIKCnVzZV9vZmZpY2lhbF9taXJyb3IoKSB7CiAgZWNobyAiWypdIE1pcnJvciBpcyBm
+YWlsaW5nLCBzd2l0Y2hpbmcgdG8gdGhlIG9mZmljaWFsIG9uZSAocGFja2FnZXMudGVybXV4LmRl
+dikuLi4iCiAgcm0gLWYgIiRQUkVGSVhfRElSL2V0Yy90ZXJtdXgvY2hvc2VuX21pcnJvcnMiIDI+
+L2Rldi9udWxsCiAgbWtkaXIgLXAgIiRQUkVGSVhfRElSL2V0Yy9hcHQiIDI+L2Rldi9udWxsCiAg
+ZWNobyAiZGViIGh0dHBzOi8vcGFja2FnZXMudGVybXV4LmRldi9hcHQvdGVybXV4LW1haW4gc3Rh
+YmxlIG1haW4iID4gIiRQUkVGSVhfRElSL2V0Yy9hcHQvc291cmNlcy5saXN0IgogIHJtIC1yZiAi
+JFBSRUZJWF9ESVIvdmFyL2xpYi9hcHQvbGlzdHMvIiogMj4vZGV2L251bGwKfQoKVVBEQVRFRD0w
+CnBrZ19pbnN0YWxsKCkgewogIGlmIFsgIiRVUERBVEVEIiA9ICIwIiBdOyB0aGVuIHBrZyB1cGRh
+dGUgPi9kZXYvbnVsbCAyPiYxOyBVUERBVEVEPTE7IGZpCiAgcGtnIGluc3RhbGwgIiRAIiAmJiBy
+ZXR1cm4gMAogIGVjaG8gIlshXSBJbnN0YWxsaW5nICckKicgZmFpbGVkLCByZXRyeWluZyB3aXRo
+IC0tZml4LW1pc3NpbmcuLi4iCiAgYXB0LWdldCB1cGRhdGUgPi9kZXYvbnVsbCAyPiYxOyBhcHQt
+Z2V0IGluc3RhbGwgLXkgLS1maXgtbWlzc2luZyAiJEAiICYmIHJldHVybiAwCiAgdXNlX29mZmlj
+aWFsX21pcnJvcgogIGFwdC1nZXQgdXBkYXRlID4vZGV2L251bGwgMj4mMTsgYXB0LWdldCBpbnN0
+YWxsIC15IC0tZml4LW1pc3NpbmcgIiRAIiAmJiByZXR1cm4gMAogIHJldHVybiAxCn0KCk49IiRQ
+UkVGSVhfRElSL2Jpbi9ub2RlIgpbICEgLXggIiROIiBdICYmIE49IiQoY29tbWFuZCAtdiBub2Rl
+IDI+L2Rldi9udWxsKSIKCmVjaG8gIlsqXSBDaGVja2luZyByZXF1aXJlZCBwYWNrYWdlcy4uLiIK
+VVNFX1RBUj0wCmNvbW1hbmQgLXYgY3VybCA+L2Rldi9udWxsIDI+JjEgfHwgcGtnX2luc3RhbGwg
+Y3VybCB8fCBlY2hvICJbIV0gQ291bGQgbm90IGluc3RhbGwgY3VybC4iCmNvbW1hbmQgLXYgZ2l0
+ID4vZGV2L251bGwgMj4mMSB8fCBwa2dfaW5zdGFsbCBnaXQgfHwgeyBlY2hvICJbIV0gQ291bGQg
+bm90IGluc3RhbGwgZ2l0LCBkb3dubG9hZGluZyB0aGUgc291cmNlIGRpcmVjdGx5LiI7IFVTRV9U
+QVI9MTsgfQppZiBbIC16ICIke046LX0iIF07IHRoZW4KICBwa2dfaW5zdGFsbCBub2RlanMKICBO
+PSIkKGNvbW1hbmQgLXYgbm9kZSAyPi9kZXYvbnVsbCkiCmZpClsgLXogIiR7TjotfSIgXSAmJiB7
+IGVjaG8gIlstXSBDb3VsZCBub3QgaW5zdGFsbCBub2RlanMuIjsgZXhpdCAxOyB9CmNvbW1hbmQg
+LXYgc3FsaXRlMyA+L2Rldi9udWxsIDI+JjEgfHwgcGtnX2luc3RhbGwgc3FsaXRlIHx8IGVjaG8g
+IlshXSBDb3VsZCBub3QgaW5zdGFsbCBzcWxpdGUzLCB0aGUgdG9vbCB3aWxsIGZhaWwgd2hlbiBy
+ZWFkaW5nIGNvb2tpZXMuIgpjb21tYW5kIC12IHRlcm11eC13YWtlLWxvY2sgPi9kZXYvbnVsbCAy
+PiYxIHx8IHBrZ19pbnN0YWxsIHRlcm11eC1hcGkgMj4vZGV2L251bGwgfHwgZWNobyAiWyFdIENv
+dWxkIG5vdCBpbnN0YWxsIHRlcm11eC1hcGkgKHdha2UtbG9jayB3b24ndCB3b3JrKS4iClsgLWQg
+Ii9kYXRhL2RhdGEvY29tLnRlcm11eC5ib290IiBdIHx8IHBrZ19pbnN0YWxsIHRlcm11eC1ib290
+IDI+L2Rldi9udWxsIHx8IGVjaG8gIlshXSBDb3VsZCBub3QgaW5zdGFsbCB0ZXJtdXgtYm9vdCAo
+YXV0b3N0YXJ0IG9uIHJlYm9vdCB3b24ndCB3b3JrKS4iCgpub2RlX29rKCkgeyAiJE4iIC12ID4v
+ZGV2L251bGwgMj4mMTsgfQoKaWYgISBub2RlX29rOyB0aGVuCiAgZWNobyAiWyFdIG5vZGUgaXMg
+YnJva2VuIChvbGQgb3BlbnNzbCksIHVwZGF0aW5nIFRlcm11eCBwYWNrYWdlcy4uLiIKICBwa2cg
+dXBkYXRlID4vZGV2L251bGwgMj4mMQogIHBrZyB1cGdyYWRlIC15IC1vIERwa2c6Ok9wdGlvbnM6
+Oj0tLWZvcmNlLWNvbmZuZXcgMj4mMSB8IHRhaWwgLTMKICBub2RlX29rIHx8IHsgZWNobyAiWyFd
+IFJlaW5zdGFsbGluZyBvcGVuc3NsICsgbm9kZWpzLi4uIjsgYXB0LWdldCBpbnN0YWxsIC15IC0t
+cmVpbnN0YWxsIG9wZW5zc2wgbm9kZWpzID4vZGV2L251bGwgMj4mMTsgfQogIGlmICEgbm9kZV9v
+azsgdGhlbgogICAgdXNlX29mZmljaWFsX21pcnJvcgogICAgYXB0LWdldCB1cGRhdGUgPi9kZXYv
+bnVsbCAyPiYxCiAgICBhcHQtZ2V0IHVwZ3JhZGUgLXkgLW8gRHBrZzo6T3B0aW9uczo6PS0tZm9y
+Y2UtY29uZm5ldyAyPiYxIHwgdGFpbCAtMwogICAgYXB0LWdldCBpbnN0YWxsIC15IC0tcmVpbnN0
+YWxsIG9wZW5zc2wgbm9kZWpzID4vZGV2L251bGwgMj4mMQogIGZpCiAgbm9kZV9vayB8fCB7IGVj
+aG8gIlstXSBub2RlIHN0aWxsIGZhaWxzLiBSdW46IHBrZyB1cGdyYWRlIC15IChpZiB0aGF0IGRv
+ZXNuJ3QgaGVscDogdGVybXV4LWNoYW5nZS1yZXBvLCB0aGVuIHBrZyB1cGdyYWRlIC15KSI7IGV4
+aXQgMTsgfQogIGVjaG8gIlsrXSBub2RlIHdvcmtzIG5vdzogJCgiJE4iIC12KSIKZmkKCmRvd25s
+b2FkX3RhcmJhbGwoKSB7CiAgVD0iJChta3RlbXAgLWQgMj4vZGV2L251bGwgfHwgZWNobyAiJEhP
+TUUvLnJlam9pbl9kbCIpIjsgbWtkaXIgLXAgIiRUIgogIFVSTD0iJFIvYXJjaGl2ZS9yZWZzL2hl
+YWRzL21haW4udGFyLmd6IgogIGlmIGNvbW1hbmQgLXYgY3VybCA+L2Rldi9udWxsOyB0aGVuIGN1
+cmwgLWZMIC0tcmV0cnkgMyAtbyAiJFQvci50Z3oiICIkVVJMIiB8fCByZXR1cm4gMQogIGVsaWYg
+Y29tbWFuZCAtdiB3Z2V0ID4vZGV2L251bGw7IHRoZW4gd2dldCAtTyAiJFQvci50Z3oiICIkVVJM
+IiB8fCByZXR1cm4gMQogIGVsc2UgZWNobyAiWy1dIE5vIGdpdCwgY3VybCBvciB3Z2V0IHRvIGRv
+d25sb2FkIHRoZSBzb3VyY2Ugd2l0aC4iOyByZXR1cm4gMTsgZmkKICBta2RpciAtcCAiJEQiCiAg
+ZmluZCAiJEQiIC1taW5kZXB0aCAxIC1tYXhkZXB0aCAxICEgLW5hbWUgbm9kZV9tb2R1bGVzIC1l
+eGVjIHJtIC1yZiB7fSArIDI+L2Rldi9udWxsCiAgdGFyIC14emYgIiRUL3IudGd6IiAtQyAiJEQi
+IC0tc3RyaXAtY29tcG9uZW50cz0xIHx8IHJldHVybiAxCiAgcm0gLXJmICIkVCIKICByZXR1cm4g
+MAp9CgppZiBbICIkQVVUT1NUQVJUIiA9ICIxIiBdICYmIFsgLWQgIiREIiBdOyB0aGVuCiAgZWNo
+byAiWypdIEF1dG9zdGFydCAtIHNraXBwaW5nIHVwZGF0ZS4iCmVsaWYgWyAiJFVTRV9UQVIiID0g
+IjEiIF07IHRoZW4KICBkb3dubG9hZF90YXJiYWxsIHx8IHsgZWNobyAiWy1dIFNvdXJjZSBkb3du
+bG9hZCBmYWlsZWQuIENoZWNrIHlvdXIgbmV0d29yayBhbmQgcnVuIGFnYWluLiI7IGV4aXQgMTsg
+fQplbGlmIFsgISAtZCAiJEQvLmdpdCIgXTsgdGhlbgogIHJtIC1yZiAiJEQiCiAgZ2l0IGNsb25l
+ICIkUiIgIiREIiB8fCB7IGVjaG8gIlshXSBnaXQgY2xvbmUgZmFpbGVkLCB0cnlpbmcgdGhlIHRh
+cmJhbGwuLi4iOyBkb3dubG9hZF90YXJiYWxsIHx8IGV4aXQgMTsgfQplbHNlCiAgY2QgIiREIiB8
+fCBleGl0IDEKICBDVVI9JChnaXQgcmVtb3RlIGdldC11cmwgb3JpZ2luIDI+L2Rldi9udWxsKQog
+IFsgIiRDVVIiICE9ICIkUiIgXSAmJiBnaXQgcmVtb3RlIHNldC11cmwgb3JpZ2luICIkUiIKICBn
+aXQgZmV0Y2ggLS1hbGwgLS1wcnVuZSB8fCBleGl0IDEKICBmb3IgZiBpbiAkQ0ZHUzsgZG8KICAg
+IFsgLWYgIiRELyRmIiBdICYmIFsgISAtZiAiJFJPQkxPWF9SRUpPSU5fSE9NRS8kZiIgXSAmJiBj
+cCAtZiAiJEQvJGYiICIkUk9CTE9YX1JFSk9JTl9IT01FLyRmIiAyPi9kZXYvbnVsbAogIGRvbmUK
+ICBFWENMPSItZSBub2RlX21vZHVsZXMiCiAgZm9yIGYgaW4gJENGR1M7IGRvIEVYQ0w9IiRFWENM
+IC1lICRmIjsgZG9uZQogIGdpdCByZXNldCAtLWhhcmQgb3JpZ2luL21haW4KICBnaXQgY2xlYW4g
+LWZkICRFWENMCmZpCgppZiBbIC16ICIke0xPQURFUl9SRUVYRUM6LX0iIF0gJiYgWyAtZiAiJEQv
+bG9hZGVyLnNoIiBdICYmIFsgLWYgIiRMIiBdICYmICEgY21wIC1zICIkRC9sb2FkZXIuc2giICIk
+TCI7IHRoZW4KICBpZiBjcCAiJEQvbG9hZGVyLnNoIiAiJEwiIDI+L2Rldi9udWxsICYmIHNlZCAt
+aSAncy9cciQvLycgIiRMIiAmJiBjaG1vZCAreCAiJEwiOyB0aGVuCiAgICBlY2hvICJbKl0gTG9h
+ZGVyIHVwZGF0ZWQgZnJvbSB0aGUgcmVwbywgcmVzdGFydGluZy4uLiIKICAgIExPQURFUl9SRUVY
+RUM9MSBleGVjIGJhc2ggIiRMIiAiJENIT0lDRSIgIiRAIgogIGZpCmZpCgpTPSIkKGNvbW1hbmQg
+LXYgc3UgMj4vZGV2L251bGwpIgpbIC1uICIke1M6LX0iIF0gJiYgewogIGdyZXAgLXF4RiAiYWxp
+YXMgbm9kZT0nJE4nIiB+Ly5iYXNocmMgMj4vZGV2L251bGwgfHwgZWNobyAiYWxpYXMgbm9kZT0n
+JE4nIiA+PiB+Ly5iYXNocmMKICBncmVwIC1xeEYgImV4cG9ydCBQQVRIPVwiJChkaXJuYW1lICIk
+TiIpOlwkUEFUSFwiIiB+Ly5iYXNocmMgMj4vZGV2L251bGwgfHwgZWNobyAiZXhwb3J0IFBBVEg9
+XCIkKGRpcm5hbWUgIiROIik6XCRQQVRIXCIiID4+IH4vLmJhc2hyYwogIHNvdXJjZSB+Ly5iYXNo
+cmMgMj4vZGV2L251bGwgfHwgdHJ1ZQp9CgpjZCAiJEQiIHx8IGV4aXQgMQppZiBbICIkQ0hPSUNF
+IiA9ICIxIiBdOyB0aGVuCiAgWyAhIC1kICIkRC9ub2RlX21vZHVsZXMiIF0gJiYgeyBucG0gaW5z
+dGFsbCAtLW5vLWF1ZGl0IC0tbm8tZnVuZCB8fCBleGl0IDE7IH0KZmkKClsgISAtZiAiJFcvJEVO
+VFJZIiBdICYmIHsgZWNobyAiWy1dICckRU5UUlknIG5vdCBmb3VuZCBpbiAkVyI7IGV4aXQgMTsg
+fQpjZCAiJFciIHx8IGV4aXQgMQoKaWYgWyAiJEFVVE9TVEFSVCIgPSAiMSIgXTsgdGhlbgogIGV4
+ZWMgIiROIiAiJEVOVFJZIiAtLWF1dG9zdGFydCAiJEAiCmVsc2UKICBleGVjICIkTiIgIiRFTlRS
+WSIgIiRAIgpmaQo=
+B64_SRC
+)
+if [ "${1:-}" = "--source" ]; then
+  echo "$PAYLOAD_B64" | base64 -d
+  exit 0
 fi
-
-CFGS="multi_configs.json webhook_config.json package_prefix_config.json activity_config.json autoexec_config.json launch_activity_cache.json"
-LAST_FILE="$ROBLOX_REJOIN_HOME/loader_choice"
-
-SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
-if [ "$SELF" != "$L" ] && { [ ! -f "$L" ] || ! cmp -s "$SELF" "$L"; }; then
-  cp "$SELF" "$L" 2>/dev/null && sed -i 's/\r$//' "$L" && chmod +x "$L"
-fi
-
-LAST="$(cat "$LAST_FILE" 2>/dev/null)"
-case "$LAST" in 1|2) ;; *) LAST=1 ;; esac
-
-AUTOSTART=0
-_rebuild=()
-for _a in "$@"; do
-  [ "$_a" = "--autostart" ] && { AUTOSTART=1; continue; }
-  _rebuild+=("$_a")
-done
-set -- "${_rebuild[@]+"${_rebuild[@]}"}"
-unset _a _rebuild
-
-normalize() {
-  case "$(echo "${1:-}" | tr 'A-Z' 'a-z')" in
-    1|vip) echo 1 ;;
-    2|lite) echo 2 ;;
-    *) echo "" ;;
-  esac
-}
-
-CHOICE=""
-if [ "$AUTOSTART" = "1" ]; then
-  CHOICE="$LAST"
-else
-  if [ $# -gt 0 ]; then
-    CHOICE="$(normalize "$1")"
-    [ -n "$CHOICE" ] && shift
-  fi
-  [ -z "$CHOICE" ] && CHOICE="$(normalize "${LOADER_CHOICE:-}")"
-fi
-
-if [ -z "$CHOICE" ]; then
-  C1=$'\033[1;38;5;87m'; C2=$'\033[1;38;5;121m'; C3=$'\033[38;5;245m'; C4=$'\033[38;5;63m'; C0=$'\033[0m'
-  [ -t 1 ] || { C1=""; C2=""; C3=""; C4=""; C0=""; }
-  echo
-  echo "${C4}╭─ ${C1}ROBLOX REJOIN${C4} ────────────────────────────────────╮${C0}"
-  echo "${C4}│${C0}                                                    ${C4}│${C0}"
-  echo "${C4}│${C0}  ${C2}[1]${C0} VIP   ${C3}all features (rejoin.cjs)${C0}               ${C4}│${C0}"
-  echo "${C4}│${C0}  ${C2}[2]${C0} LITE  ${C3}light, smooth on long runs${C0}              ${C4}│${C0}"
-  echo "${C4}│${C0}                                                    ${C4}│${C0}"
-  echo "${C4}╰────────────────────────────────────────────────────╯${C0}"
-  printf "  Choose [1-2, Enter = %s]: " "$LAST"
-  ANS=""
-  { read -r ANS </dev/tty; } 2>/dev/null || read -r ANS || ANS=""
-  if [ -z "$ANS" ]; then
-    CHOICE="$LAST"
-  else
-    CHOICE="$(normalize "$ANS")"
-    [ -z "$CHOICE" ] && { echo "[-] Invalid choice."; exit 1; }
-  fi
-fi
-
-echo "$CHOICE" > "$LAST_FILE" 2>/dev/null
-
-if [ "$CHOICE" = "2" ]; then ENTRY="$ENTRY_LITE"; NAME="LITE"; else ENTRY="$ENTRY_VIP"; NAME="VIP"; fi
-echo "[*] Starting $NAME..."
-
-use_official_mirror() {
-  echo "[*] Mirror is failing, switching to the official one (packages.termux.dev)..."
-  rm -f "$PREFIX_DIR/etc/termux/chosen_mirrors" 2>/dev/null
-  mkdir -p "$PREFIX_DIR/etc/apt" 2>/dev/null
-  echo "deb https://packages.termux.dev/apt/termux-main stable main" > "$PREFIX_DIR/etc/apt/sources.list"
-  rm -rf "$PREFIX_DIR/var/lib/apt/lists/"* 2>/dev/null
-}
-
-UPDATED=0
-pkg_install() {
-  if [ "$UPDATED" = "0" ]; then pkg update >/dev/null 2>&1; UPDATED=1; fi
-  pkg install "$@" && return 0
-  echo "[!] Installing '$*' failed, retrying with --fix-missing..."
-  apt-get update >/dev/null 2>&1; apt-get install -y --fix-missing "$@" && return 0
-  use_official_mirror
-  apt-get update >/dev/null 2>&1; apt-get install -y --fix-missing "$@" && return 0
-  return 1
-}
-
-N="$PREFIX_DIR/bin/node"
-[ ! -x "$N" ] && N="$(command -v node 2>/dev/null)"
-
-echo "[*] Checking required packages..."
-USE_TAR=0
-command -v curl >/dev/null 2>&1 || pkg_install curl || echo "[!] Could not install curl."
-command -v git >/dev/null 2>&1 || pkg_install git || { echo "[!] Could not install git, downloading the source directly."; USE_TAR=1; }
-if [ -z "${N:-}" ]; then
-  pkg_install nodejs
-  N="$(command -v node 2>/dev/null)"
-fi
-[ -z "${N:-}" ] && { echo "[-] Could not install nodejs."; exit 1; }
-command -v sqlite3 >/dev/null 2>&1 || pkg_install sqlite || echo "[!] Could not install sqlite3, the tool will fail when reading cookies."
-command -v termux-wake-lock >/dev/null 2>&1 || pkg_install termux-api 2>/dev/null || echo "[!] Could not install termux-api (wake-lock won't work)."
-[ -d "/data/data/com.termux.boot" ] || pkg_install termux-boot 2>/dev/null || echo "[!] Could not install termux-boot (autostart on reboot won't work)."
-
-node_ok() { "$N" -v >/dev/null 2>&1; }
-
-if ! node_ok; then
-  echo "[!] node is broken (old openssl), updating Termux packages..."
-  pkg update >/dev/null 2>&1
-  pkg upgrade -y -o Dpkg::Options::=--force-confnew 2>&1 | tail -3
-  node_ok || { echo "[!] Reinstalling openssl + nodejs..."; apt-get install -y --reinstall openssl nodejs >/dev/null 2>&1; }
-  if ! node_ok; then
-    use_official_mirror
-    apt-get update >/dev/null 2>&1
-    apt-get upgrade -y -o Dpkg::Options::=--force-confnew 2>&1 | tail -3
-    apt-get install -y --reinstall openssl nodejs >/dev/null 2>&1
-  fi
-  node_ok || { echo "[-] node still fails. Run: pkg upgrade -y (if that doesn't help: termux-change-repo, then pkg upgrade -y)"; exit 1; }
-  echo "[+] node works now: $("$N" -v)"
-fi
-
-download_tarball() {
-  T="$(mktemp -d 2>/dev/null || echo "$HOME/.rejoin_dl")"; mkdir -p "$T"
-  URL="$R/archive/refs/heads/main.tar.gz"
-  if command -v curl >/dev/null; then curl -fL --retry 3 -o "$T/r.tgz" "$URL" || return 1
-  elif command -v wget >/dev/null; then wget -O "$T/r.tgz" "$URL" || return 1
-  else echo "[-] No git, curl or wget to download the source with."; return 1; fi
-  mkdir -p "$D"
-  find "$D" -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf {} + 2>/dev/null
-  tar -xzf "$T/r.tgz" -C "$D" --strip-components=1 || return 1
-  rm -rf "$T"
-  return 0
-}
-
-if [ "$AUTOSTART" = "1" ] && [ -d "$D" ]; then
-  echo "[*] Autostart - skipping update."
-elif [ "$USE_TAR" = "1" ]; then
-  download_tarball || { echo "[-] Source download failed. Check your network and run again."; exit 1; }
-elif [ ! -d "$D/.git" ]; then
-  rm -rf "$D"
-  git clone "$R" "$D" || { echo "[!] git clone failed, trying the tarball..."; download_tarball || exit 1; }
-else
-  cd "$D" || exit 1
-  CUR=$(git remote get-url origin 2>/dev/null)
-  [ "$CUR" != "$R" ] && git remote set-url origin "$R"
-  git fetch --all --prune || exit 1
-  for f in $CFGS; do
-    [ -f "$D/$f" ] && [ ! -f "$ROBLOX_REJOIN_HOME/$f" ] && cp -f "$D/$f" "$ROBLOX_REJOIN_HOME/$f" 2>/dev/null
-  done
-  EXCL="-e node_modules"
-  for f in $CFGS; do EXCL="$EXCL -e $f"; done
-  git reset --hard origin/main
-  git clean -fd $EXCL
-fi
-
-if [ -z "${LOADER_REEXEC:-}" ] && [ -f "$D/loader.sh" ] && [ -f "$L" ] && ! cmp -s "$D/loader.sh" "$L"; then
-  if cp "$D/loader.sh" "$L" 2>/dev/null && sed -i 's/\r$//' "$L" && chmod +x "$L"; then
-    echo "[*] Loader updated from the repo, restarting..."
-    LOADER_REEXEC=1 exec bash "$L" "$CHOICE" "$@"
-  fi
-fi
-
-S="$(command -v su 2>/dev/null)"
-[ -n "${S:-}" ] && {
-  grep -qxF "alias node='$N'" ~/.bashrc 2>/dev/null || echo "alias node='$N'" >> ~/.bashrc
-  grep -qxF "export PATH=\"$(dirname "$N"):\$PATH\"" ~/.bashrc 2>/dev/null || echo "export PATH=\"$(dirname "$N"):\$PATH\"" >> ~/.bashrc
-  source ~/.bashrc 2>/dev/null || true
-}
-
-cd "$D" || exit 1
-if [ "$CHOICE" = "1" ]; then
-  [ ! -d "$D/node_modules" ] && { npm install --no-audit --no-fund || exit 1; }
-fi
-
-[ ! -f "$W/$ENTRY" ] && { echo "[-] '$ENTRY' not found in $W"; exit 1; }
-cd "$W" || exit 1
-
-if [ "$AUTOSTART" = "1" ]; then
-  exec "$N" "$ENTRY" --autostart "$@"
-else
-  exec "$N" "$ENTRY" "$@"
-fi
+exec bash -c "$(echo "$PAYLOAD_B64" | base64 -d)" "$(readlink -f "$0" 2>/dev/null || echo "$0")" "$@"
